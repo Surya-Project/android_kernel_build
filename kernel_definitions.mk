@@ -103,32 +103,28 @@ CLANG_ARCH := arm-linux-gnueabi
 endif
 
 cc :=
-real_cc :=
+path :=
 ifeq ($(KERNEL_LLVM_SUPPORT),true)
-  ifeq ($(KERNEL_CUSTOM_LLVM),true)
-    KERNEL_CUSTOM_LLVM_PATH ?= $(SOURCE_ROOT)/prebuilts/clang-standalone
-    KERNEL_LLVM_BIN := $(KERNEL_CUSTOM_LLVM_PATH)/bin
-    $(warning Device is using custom LLVM toolchain for the kernel)
-  else
-    ifeq ($(KERNEL_SD_LLVM_SUPPORT), true)  #Using sd-llvm compiler
-      ifeq ($(shell echo $(SDCLANG_PATH) | head -c 1),/)
-         KERNEL_LLVM_BIN := $(SDCLANG_PATH)
-      else
-         KERNEL_LLVM_BIN := $(shell pwd)/$(SDCLANG_PATH)
-      endif
-      $(warning "Using sdllvm" $(KERNEL_LLVM_BIN)/clang)
+  ifeq ($(KERNEL_SD_LLVM_SUPPORT), true)  #Using sd-llvm compiler
+    ifeq ($(shell echo $(SDCLANG_PATH) | head -c 1),/)
+       KERNEL_LLVM_BIN := $(SDCLANG_PATH)
     else
-      ifeq ($(USE_KERNEL_AOSP_LLVM), true)  #Using kernel aosp-llvm compiler
-         KERNEL_LLVM_BIN := $(KERNEL_AOSP_LLVM_BIN)
-         $(warning "Using latest kernel aosp llvm" $(KERNEL_LLVM_BIN))
-      else #Using platform aosp-llvm binaries
-         KERNEL_LLVM_BIN := $(shell pwd)/$(shell (dirname $(CLANG)))
-         $(warning "Not using latest aosp-llvm" $(KERNEL_LLVM_BIN)/clang)
-      endif
+       KERNEL_LLVM_BIN := $(shell pwd)/$(SDCLANG_PATH)
     endif
+    $(warning "Using sdllvm" $(KERNEL_LLVM_BIN)/clang)
+    path := $(KERNEL_LLVM_BIN)
+  else
+    ifeq ($(USE_KERNEL_AOSP_LLVM), true)  #Using kernel aosp-llvm compiler
+       KERNEL_LLVM_BIN := $(KERNEL_AOSP_LLVM_CLANG)
+       $(warning "Using latest kernel aosp llvm" $(KERNEL_LLVM_BIN))
+    else #Using platform aosp-llvm binaries
+       KERNEL_LLVM_BIN := $(shell pwd)/$(CLANG)
+       KERNEL_AOSP_LLVM_BIN := $(shell pwd)/$(shell (dirname $(CLANG)))
+       $(warning "Not using latest aosp-llvm" $(KERNEL_LLVM_BIN))
+    endif
+    path := $(KERNEL_AOSP_LLVM_BIN)
   endif
-  cc := CC=clang
-  real_cc := PATH=$(KERNEL_LLVM_BIN):$$PATH REAL_CC=clang CLANG_TRIPLE=aarch64-linux-gnu- AR=llvm-ar LLVM_NM=llvm-nm LD=ld.lld NM=llvm-nm LLVM=1
+  cc := PATH=$(path):$$PATH CC=clang REAL_CC=clang CLANG_TRIPLE=aarch64-linux-gnu- AS=llvm-as AR=llvm-ar LD=ld.lld NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip
 else
 ifeq ($(strip $(KERNEL_GCC_NOANDROID_CHK)),0)
 KERNEL_CFLAGS := KCFLAGS=-mno-android
@@ -155,7 +151,7 @@ GKI_PLATFORM_NAME := $(shell echo $(GKI_PLATFORM_NAME) | sed "s/vendor\///g")
 TARGET_USES_UNCOMPRESSED_KERNEL := $(shell grep "CONFIG_BUILD_ARM64_UNCOMPRESSED_KERNEL=y" $(TARGET_KERNEL_SOURCE)/arch/arm64/configs/vendor/$(GKI_PLATFORM_NAME)_GKI.config)
 
 # Generate the defconfig file from the fragments
-cmd := $(PATH_OVERRIDE) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(real_cc) KERN_OUT=$(KERNEL_OUT) $(TARGET_KERNEL_MAKE_ENV) MAKE_PATH=$(MAKE_PATH) TARGET_BUILD_VARIANT=user $(TARGET_KERNEL_SOURCE)/scripts/gki/generate_defconfig.sh $(KERNEL_DEFCONFIG)
+cmd := $(PATH_OVERRIDE) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(cc) KERN_OUT=$(KERNEL_OUT) $(TARGET_KERNEL_MAKE_ENV) MAKE_PATH=$(MAKE_PATH) TARGET_BUILD_VARIANT=user $(TARGET_KERNEL_SOURCE)/scripts/gki/generate_defconfig.sh $(KERNEL_DEFCONFIG)
 _x := $(shell $(cmd))
 else
 TARGET_USES_UNCOMPRESSED_KERNEL := $(shell grep "CONFIG_BUILD_ARM64_UNCOMPRESSED_KERNEL=y" $(TARGET_KERNEL_SOURCE)/arch/$(KERNEL_ARCH)/configs/$(KERNEL_DEFCONFIG))
@@ -212,7 +208,7 @@ ifeq ($(GKI_KERNEL),1)
     BOARD_KERNEL-GKI_BOOTIMAGE_PARTITION_SIZE := 0x06000000
 
     # Generate the GKI defconfig
-    _x := $(shell ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(real_cc) KERN_OUT=$(KERNEL_OUT) $(TARGET_KERNEL_MAKE_ENV) MAKE_PATH=$(MAKE_PATH) TARGET_BUILD_VARIANT=user $(TARGET_KERNEL_SOURCE)/scripts/gki/generate_defconfig.sh $(GKI_KERNEL_DEFCONFIG))
+    _x := $(shell ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(cc) KERN_OUT=$(KERNEL_OUT) $(TARGET_KERNEL_MAKE_ENV) MAKE_PATH=$(MAKE_PATH) TARGET_BUILD_VARIANT=user $(TARGET_KERNEL_SOURCE)/scripts/gki/generate_defconfig.sh $(GKI_KERNEL_DEFCONFIG))
   endif
 endif
 
@@ -291,7 +287,6 @@ define build-kernel
 	HAS_MODULES=$(MODULES) \
 	device/qcom/kernelscripts/buildkernel.sh \
 	$(cc) \
-	$(real_cc) \
 	$(TARGET_KERNEL_MAKE_ENV)
 endef
 
